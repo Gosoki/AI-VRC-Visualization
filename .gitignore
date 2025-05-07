@@ -1,3 +1,8 @@
+#custom
+ssl/*.pem
+json/*.json
+public/CG
+
 # Logs
 logs
 *.log

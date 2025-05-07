@@ -1,0 +1,62 @@
+.mainMuteButton {
+	position: absolute;
+	left: 150px;
+}
+
+.mainVideoButton {
+	position: absolute;
+	left: 10px;
+}
+
+#transcriptionDiv {
+	position: absolute;
+	/* 设置文本为绝对定位 */
+	bottom: 0;
+	/* 设置文本距离底部为0 */
+	white-space: nowrap;
+	/* 防止文本换行 */
+	overflow: hidden;
+	/* 隐藏超出屏幕范围的部分 */
+	text-overflow: ellipsis;
+	/* 使用省略号表示被隐藏的文本 */
+	color: white;
+	/* 设置字体颜色为白色 */
+	text-shadow: 1px 1px 1px rgba(0, 0, 0);
+	/* 添加阴影效果 */
+	font-size: 18px;
+}
+
+#aihintDiv {
+	/* white-space: nowrap; /* 防止文本换行 */
+	text-align: left;
+	line-height: 30px;
+	color: yellow;
+	text-shadow: 1px 1px 1px rgba(0, 0, 0);
+	/* 添加阴影效果 */
+	font-size: 18px;
+}
+
+#videoGrid {
+	display: grid;
+	grid-template-columns: 64px;
+	grid-auto-rows: repeat(auto-fill, 48px);
+}
+
+video {
+	width: 100%;
+	object-fit: cover;
+}
+
+#console-messages {
+	position: fixed;
+	bottom: 5%;
+	right: 3%;
+	padding: 10px;
+	background-color: #333;
+	color: #fff;
+	border-radius: 5px;
+	width: 20%; /* 固定宽度 */
+	max-height: 200px; /* 最大高度，超出部分会自动滚动 */
+	overflow-y: auto; /* 垂直方向滚动条 */
+	z-index: 1;
+}

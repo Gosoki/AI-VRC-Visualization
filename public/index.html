@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="shortcut icon" href="img/favicon.ico1" type="image/x-icon">
+  <link href="https://fonts.googleapis.com/css?family=M+PLUS+1p" rel="stylesheet">
+  <title>Main - Room</title>
+  <script>
+    var roomId = "room"
+  </script>
+
+  <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/donmccurdy/aframe-extras@v6.1.1/dist/aframe-extras.min.js"></script>
+  <!-- <script src="https://code.wuzuxi.com:3000/socket.io/socket.io.js"></script> -->
+  <script src="https://cdn.socket.io/4.6.0/socket.io.min.js" integrity="sha384-c79GN5VsunZvi+Q/WObgk2in0CbZsHnjEqvFxC5DxHn9lTfNce2WW6h2pH6u/kF+" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/peerjs@1.3.1/dist/peerjs.min.js"></script>
+
+  <!-- 图标按钮 -->
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.13.0/js/all.min.js"
+    integrity="sha256-KzZiKy0DWYsnwMF+X1DvQngQ2/FxF7MF3Ff72XcpuPs=" crossorigin="anonymous"></script>
+  <script defer src="https://code.jquery.com/jquery-3.5.1.slim.min.js"
+    integrity="sha384-DfXdz2htPH0lsSSs5nCTpuj/zy4C+OGpamoFVy38MVBnE+IbbVYUew+OrCXaRkfj"
+    crossorigin="anonymous"></script>
+
+  <!-- AframeComponent -->  
+  <script src="js/AframeComponent.js"></script>
+
+  <!-- css -->
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+
+<body>
+  <div class="a-loader-title" style="z-index: 1">
+    <span style="float:right">
+      <div onclick="playStop()" class="mainControlsButton mainVideoButton">
+        <i class="fas fa-video"></i>
+        <span>Stop Video</span>
+      </div>
+      <div onclick="muteUnmute()" class="mainControlsButton mainMuteButton">
+        <i class="fas fa-microphone"></i>
+        <span>Mute</span>
+      </div>
+    </span>
+    <span>Hello, <span id="my_name">user</span>! </span>
+    <span> Msg：<span id="my_msg">Hello!</span></span>
+    <!-- 
+        <input type="checkbox" id="checkbox_camera" onclick="onclickCheckbox_CameraMicrophone()">Camera
+        <input type="checkbox" id="checkbox_microphone" onclick="onclickCheckbox_CameraMicrophone()">Microphone 
+        -->
+    <span style="float:right;padding-right:10px;"></span>
+    <button id="hintButton">AI hint</button>
+    <button id="drawButton">AI draw</button>
+    <button id="drawbackgroundButton">AI background</button>
+    <button id="nameBtn">Name</button>
+    <button id="msgBtn">Msg</button>
+    <button id="colorBtn">
+      <div class="picker" id="color-picker">Color</div>
+    </button>
+      <input type="checkbox" id="languageCheckbox">
+    <button id="startButton">Speech to text</button>
+    <button id="stopButton" disabled>Stop</button>
+    <select id="roomSelector">
+      <option value="room1">Room 1</option>
+      <option value="room2">Room 2</option>
+      <option value="room3">Room 3</option>
+      <option value="room4">Room 4</option>
+  </select>
+  <button id="joinChatRoomButton" onclick="joinChatRoom()">Join Room</button>
+  <button id="leaveChatRoomButton" onclick="leaveChatRoom()" disabled>Leave Room</button>
+    
+    <!-- <button id="startRecord">Recode</button>
+    <button id="stopRecord" disabled>Stop</button> -->
+    <button id="saveRecord" disabled>Save</button>
+    <!-- <form name="form1" style="display: inline-block;">
+      <input type="button" value="color" onclick="document.form1.picpath.click()">
+      <input type="color" name="picpath" id="picpath" style="display:none;"
+        onChange="document.form1.path.value=this.value">
+    </form> -->
+    <div id="aihintDiv" style="z-index: 1"> 
+      AI hint:
+      <span id="aihint"></span>   
+    <div id="videoGrid"></div>
+    </div>
+  </div>
+  <div id="console-messages"></div>
+  <div id="transcriptionDiv" style="z-index: 1">
+    <div id="transcriptionStatus">Speech to text:</div> 
+    <span id="transcription">　</span>   
+  </div>
+  <a-scene>
+    <a-sky src="img/momiji.jpg" id="background" rotation="0 -130 0" color="#888" material="" geometry="" scale=""></a-sky>
+    <a-box id="teleport-trigger" position="0 1 -5" color="blue"></a-box>
+    <a-sphere id="sphere1" position="-3 1 -5" color="red"></a-sphere>
+    <a-sphere id="sphere2" position="-2 1 -5" color="green"></a-sphere>
+    <a-assets>
+    </a-assets>
+    <a-plane position="0 0 0" rotation="-90 0 0" width="50" height="50" src="/img/back1.png" material="color: gray;"></a-plane>
+    <!-- <a-sky color="#333" src="" rotation="0 -130 0"></a-sky> -->
+    <!-- <a-light position="-50 32 -2" rotation="0 90 0" type="point" color="#ffffff"></a-light> -->
+    <a-plane position="0 2 -4" rotation="0 0 0" width="5" height="3" src="">
+      <a-entity id="textbox" position="-1 1.2 0.1" data-text="hello!こんにちは世界!🌝" color="#000">
+      </a-entity>
+    </a-plane>
+    <a-box position="4 0.5 -4" rotation="0 45 0" width="1" height="1" depth="1" src="/img/back.png"></a-box>
+    <a-box position="4 3.5 -4" rotation="0 45 0" width="1" height="1" depth="1" src="/img/back.png"></a-box>
+
+ 
+    <!-- ROOM1 -->
+    <a-box position="-17.5 1.5 -17.5" rotation="0 90 0" width="1" height="1" depth="1" src="/img/back.png" material="src: /img/back.png" geometry="primitive: box; width: 1; height: 1; depth: 1" scale="0.1 3 5"></a-box>
+    <a-box position="-20 1.5 -15" rotation="0 0 0" width="1" height="1" depth="1" src="/img/back.png" material="src: /img/back.png" geometry="primitive: box; width: 1; height: 1; depth: 1" scale="0.1 3 5"></a-box>
+    <a-box id="chatroom1" position="-17.5 1 -15" rotation="0 0 0" width="1" height="1" depth="1" material="opacity:0.5" geometry="primitive: box; width: 1; height: 1; depth: 1" scale="12 5 12"></a-box>
+    <a-box id="chatoproom1" position="-17.5 6 -15" rotation="0 0 0" width="1" height="1" depth="1" material="opacity:0.5" geometry="primitive: box; width: 1; height: 1; depth: 1" scale="5 5 5"></a-box>
+    <a-box id="chatimgroom1" position="-14.5 6 -15" rotation="0 0 0" width="1" height="1" depth="1" geometry="primitive: box; width: 1; height: 1; depth: 1" scale="0.01 5 5"></a-box>
+    <a-text value="1 Chat Room 1" position="-11 3 -15" rotation="0 90 0" color="#000" width="20" align="center"></a-text>
+
+
+      <!-- ROOM2 -->
+    <a-box position="-17.5 1.5 -2.5" rotation="0 90 0" width="1" height="1" depth="1" src="/img/back.png" material="src: /img/back.png" geometry="primitive: box; width: 1; height: 1; depth: 1" scale="0.1 3 5"></a-box>
+    <a-box position="-20 1.5 0" rotation="0 0 0" width="1" height="1" depth="1" src="/img/back.png" material="src: /img/back.png" geometry="primitive: box; width: 1; height: 1; depth: 1" scale="0.1 3 5"></a-box>
+    <a-box id="chatroom2" position="-17.5 1 0" rotation="0 0 0" width="1" height="1" depth="1"  material="opacity:0.5" geometry="primitive: box; width: 1; height: 1; depth: 1" scale="12 5 12"></a-box>
+    <a-box id="chatoproom2" position="-17.5 6 0" rotation="0 0 0" width="1" height="1" depth="1" material="opacity:0.5" geometry="primitive: box; width: 1; height: 1; depth: 1" scale="5 5 5"></a-box>
+    <a-box id="chatimgroom2" position="-14.5 6 0" rotation="0 0 0" width="1" height="1" depth="1" geometry="primitive: box; width: 1; height: 1; depth: 1" scale="0.01 5 5"></a-box>
+    <a-text value="2 Chat Room 2" position="-11 3 0" rotation="0 90 0" color="#000" width="20" align="center"></a-text>
+
+      <!-- ROOM3 -->
+    <a-box position="-17.5 1.5 12.5" rotation="0 90 0" width="1" height="1" depth="1" src="/img/back.png" material="src: /img/back.png" geometry="primitive: box; width: 1; height: 1; depth: 1" scale="0.1 3 5"></a-box>
+    <a-box position="-20 1.5 15" rotation="0 0 0" width="1" height="1" depth="1" src="/img/back.png" material="src: /img/back.png" geometry="primitive: box; width: 1; height: 1; depth: 1" scale="0.1 3 5"></a-box>
+    <a-box id="chatroom3" position="-17.5 1 15" rotation="0 0 0" width="1" height="1" depth="1"  material="opacity:0.5" geometry="primitive: box; width: 1; height: 1; depth: 1" scale="12 5 12"></a-box>
+    <a-box id="chatoproom3" position="-17.5 6 15" rotation="0 0 0" width="1" height="1" depth="1" material="opacity:0.5" geometry="primitive: box; width: 1; height: 1; depth: 1" scale="5 5 5"></a-box>
+    <a-box id="chatimgroom3" position="-14.5 6 15" rotation="0 0 0" width="1" height="1" depth="1" geometry="primitive: box; width: 1; height: 1; depth: 1" scale="0.01 5 5"></a-box>
+    <a-text value="3 Chat Room 3" position="-11 3 15" rotation="0 90 0" color="#000" width="20" align="center"></a-text>
+
+    <a-box id="box-ui" color="blue" width="0.2" height="0.2" depth="0.2" position="0 0 0" rotation="0 0 0">
+      <a-box color="red" width="0.2" height="0.2" depth="0.2" position="-0.2 0 0"></a-box>
+      <a-box color="green" width="0.2" height="0.2" depth="0.2" position="0.2 0 0"></a-box>
+      <a-entity
+      id="playergltf"
+      gltf-model="https://cdn.jsdelivr.net/gh/Gosoki/gltf-scene/spider-man_from_spider-man_no_way_home/scene.gltf" 
+      scale="0.7 0.7 0.7"
+      position="0 -0.5 -0.5"
+      rotation="0 180 0"></a-entity>
+    </a-box>
+
+    <a-entity id="player" player look-controls wasd-controls camera position="0 2 0">
+      <a-sphere id="my_ball"></a-sphere>
+      <a-text id="my_name_plate"></a-text>
+      <a-text id="my_msg_plate"></a-text>
+      <a-entity cursor="rayOrigin: mouse"></a-entity>
+    </a-entity>
+    <a-entity laser-controls="hand:right"></a-entity>
+  </a-scene>
+
+  <script src="js/main.js"></script>
+  <script src="js/picker.js"></script>
+
+	<script>
+    // 屏幕上显示汉字
+    var textnum = -0.1;
+    function aframeMutlByte(transcript){
+      textnum -=0.15;
+      const textbox = document.getElementById("textbox");
+      const mb_text = document.createElement("a-image");
+      console.log(mb_text)
+      console.log(transcript)
+      const text = transcript
+      const text_cnt = text.length
+      const width = text_cnt*1.4
+      const height= 1.6
+      let cvs = document.createElement('canvas')
+      let ctx = cvs.getContext('2d')
+      cvs.width = width*100
+      cvs.height = height*100
+      ctx.fillStyle = "rgb(0, 0, 0)"
+      ctx.font = '100pt Arial'
+      ctx.fillText(text,0,125)
+      const base64 = cvs.toDataURL("image/png")
+      mb_text.setAttribute("scale", (width)/10+" "+height/10+" "+"1");
+      mb_text.setAttribute("position", 0+" "+textnum+" "+"0");
+      mb_text.setAttribute("src", base64);
+      textbox.appendChild(mb_text);
+    }
+	</script>
+
+
+
+  <script>
+    var scene = document.querySelector('a-scene');
+    var playergltf = document.getElementById('playergltf');
+    var animationPlaying = true;
+    //脚下的UIbox
+    var my_ui = document.getElementById("box-ui");
+
+
+    // 监听键盘事件
+    document.addEventListener('keydown', function(event) {
+        if (event.key === 'w' || event.key === 'a' || event.key === 's' || event.key === 'd') {
+            // 按下WASD键时播放前进动画
+            if (!animationPlaying) {
+                playergltf.setAttribute('animation-mixer', 'clip:Armature|Armature|hero_spiderman01_S08@walk|Base Layer; timeScale: 0.8');
+                animationPlaying = true;
+            }
+        }
+
+        if (event.key === 'e') {
+            // 按下Q键时逆时针旋转模型（Y轴）
+            my_ui.setAttribute('rotation', {
+                x: my_ui.getAttribute('rotation').x,
+                y: my_ui.getAttribute('rotation').y - 10, // 10度的旋转
+                z: my_ui.getAttribute('rotation').z
+            });
+        }
+
+        if (event.key === 'q') {
+            // 按下E键时顺时针旋转模型（Y轴）
+            my_ui.setAttribute('rotation', {
+              x: my_ui.getAttribute('rotation').x,
+              y: my_ui.getAttribute('rotation').y + 10, // 10度的旋转
+              z: my_ui.getAttribute('rotation').z
+          });
+        }
+    });
+
+    document.addEventListener('keyup', function(event) {
+        if (event.key === 'w' || event.key === 'a' || event.key === 's' || event.key === 'd') {
+            // 松开WASD键时停止前进动画
+            if (animationPlaying) {
+                playergltf.removeAttribute('animation-mixer');
+                animationPlaying = false;
+            }
+        }
+    });
+
+</script>
+
+
+</body>
+</html>
