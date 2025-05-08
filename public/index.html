@@ -79,6 +79,16 @@
       <input type="color" name="picpath" id="picpath" style="display:none;"
         onChange="document.form1.path.value=this.value">
     </form> -->
+
+
+
+    
+        <div class="stat-value" id="short-term">0</div>
+        <div class="stat-value" id="mid-term">0.0</div>
+        <span class="stat-number" id="long-term">0.0</span>
+
+
+
     <div id="aihintDiv" style="z-index: 1"> 
       AI hint:
       <span id="aihint"></span>   
@@ -153,6 +163,7 @@
     <a-entity laser-controls="hand:right"></a-entity>
   </a-scene>
 
+  <script src="js/calculate.js"></script>
   <script src="js/main.js"></script>
   <script src="js/picker.js"></script>
 

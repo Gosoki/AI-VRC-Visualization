@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>前端情感分析</title>
+  <!-- 引入 TensorFlow.js -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.18.0/dist/tf.min.js"></script>
+</head>
+<body>
+  <textarea id="input" placeholder="输入中文或英文..." rows="4" cols="50"></textarea>
+  <button onclick="analyze()">分析情感</button>
+  <div id="result"></div>
+
+  <script>
+    let model;
+    // 加载预训练模型（示例模型，需替换为实际模型URL）
+    async function loadModel() {
+      model = await tf.loadLayersModel('https://your-model-url/model.json');
+    }
+    loadModel();
+
+    async function analyze() {
+      const text = document.getElementById("input").value;
+      if (!model) {
+        alert("模型正在加载，请稍后...");
+        return;
+      }
+
+      // 文本预处理（需根据实际模型调整）
+      const tokens = text.toLowerCase().split(/[^\w]/).filter(t => t);
+      const wordIndex = {'good': 1, 'bad': 2, 'happy': 3, 'sad': 4}; // 示例词典
+      const sequence = tokens.map(t => wordIndex[t] || 0).slice(0, 20);
+
+      // 预测
+      const input = tf.tensor2d([sequence]);
+      const prediction = model.predict(input);
+      const score = prediction.dataSync()[0];
+
+      // 显示结果
+      document.getElementById("result").innerHTML = `
+        <p>得分: ${score.toFixed(2)}</p>
+        <p>结论: ${score > 0.5 ? "✅ Positive" : "❌ Negative"}</p>
+      `;
+    }
+  </script>
+</body>
+</html>

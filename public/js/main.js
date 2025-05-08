@@ -1,7 +1,7 @@
 /*
  * @Author: Gosoki Gosoki@github.com
  * @Date: 2023-11-23 19:55:41
- * @LastEditTime: 2024-11-21 20:04:02
+ * @LastEditTime: 2025-05-08 16:17:11
  * 
  * Copyright (c) 2024 by Gosoki , All Rights Reserved. 
  */
@@ -65,15 +65,6 @@ socket.on("broadcast_user_info", (msg) => {
 		other_name_video.setAttribute("scale", "0.3 0.3 0.3");
 		other_name_video.setAttribute("height", "0.8");
 
-		// let other_ball = document.createElement("a-sphere");
-		// other_ball.setAttribute("id", other_user_id);
-		// other_ball.setAttribute("scale", "1 1 1");
-		// other_ball.setAttribute("position", other_user_position.x + " " + other_user_position.y + " " + other_user_position.z);
-		// other_ball.appendChild(other_name_plate);
-		// other_ball.appendChild(other_name_msg);
-		// other_ball.appendChild(other_name_video);
-		// document.querySelector("a-scene").appendChild(other_ball);
-
 		let other_ball = document.createElement("a-entity");
 		other_ball.setAttribute("id", other_user_id);
 		other_ball.setAttribute("gltf-model", "https://cdn.jsdelivr.net/gh/Gosoki/gltf-scene/spider-man_from_spider-man_no_way_home/scene.gltf");
@@ -95,14 +86,12 @@ socket.on("broadcast_user_info", (msg) => {
 		other_user.childNodes[1].setAttribute("value", other_user_msg);
 		other_user.childNodes[1].setAttribute("color", other_user_color);
 		other_user.childNodes[2].setAttribute("src", "#");
-		//other_user.childNodes[2].setAttribute("src", "#" + other_user_id.substring(5)); //去处前头"body-"
 		other_user.childNodes[2].setAttribute("src", "#" + other_user_peerid);
 
 		// 取消先前的定时器
 		if (other_user.timerId) {
             clearTimeout(other_user.timerId);
         }
-
 		// 设置新的定时器
 		other_user.timerId = setTimeout(function() {other_user.removeAttribute('animation-mixer');}, 200);
 	}
@@ -114,15 +103,6 @@ let audioStream
 let audioChunks = [];
 
 let joinrommid = roomId 
-
-	// myVideoStream = null;
-	// navigator =	null;
-	// if (!peer.destroyed){
-	// 	peer.destroy();
-	// 	console.warn("peer.destroyed")
-	// }
-	// peer = null;
-	// console.warn("peer.makenew")
 	peer = new Peer(undefined, {
 		host: "/",
 		port: peerPort,
@@ -253,7 +233,6 @@ let joinrommid = roomId
 		).catch(function (err) { console.log(err.name + ": " + err.message); });
 
 
-
 socket.on("broadcast_aihint", (aihint) => {
 	console.log("AI救我")
 	//alert("这是一个弹窗！");
@@ -380,8 +359,6 @@ socket.on("user-disconnected", (otherUserInfo) => {
 	console.log(otherUserName + ":logout!");
 	showMessage(otherUserName + ":logout!")
 });
-
-
 
 
 
@@ -566,64 +543,6 @@ const startButton = document.getElementById('startButton');
 const stopButton = document.getElementById('stopButton');
 var recognition = null;
 
-// // 检查浏览器是否支持 Web Speech API
-// if (!('webkitSpeechRecognition' in window)) {
-// 	alert('你的浏览器不支持 Web Speech API');
-// } else {
-// 	recognition = new webkitSpeechRecognition();
-
-// 	const checkbox = document.getElementById('languageCheckbox');
-// 	checkbox.addEventListener('change', function() {
-// 		if (this.checked) {
-// 		recognition.lang = 'zh-CN'; // 选中时设置为中文
-// 		recognition.stop();
-// 		} else {
-// 		recognition.lang = 'ja-JP'; // 未选中时设置为日文
-// 		recognition.stop();
-// 		}
-// 	});
-// 	//默认语言
-// 	recognition.lang = 'ja-JP';
-
-// 	// 开始录音
-// 	startButton.addEventListener('click', () => {
-// 		recognition.start();
-// 		mediaRecorder.start();
-// 		startButton.disabled = true;
-// 		stopButton.disabled = false;
-// 		console.log('Speech recognition started');
-// 		});
-
-// 	// 停止录音
-// 	stopButton.addEventListener('click', () => {
-// 		recognition.stop();
-// 		mediaRecorder.stop();
-// 		startButton.disabled = false;
-// 		stopButton.disabled = true;
-// 	});
-
-// 	// 监听录音结果
-// 	recognition.addEventListener('result', (event) => {
-// 		const transcript = event.results[0][0].transcript;
-// 		transcription.textContent = transcript + transcription.textContent;
-// 		socket.emit("seed_my_speech_to_server", [my_peerid,my_name,transcript]);
-// 		aframeMutlByte(transcript)
-// 	});
-
-// 	// 处理错误
-// 	recognition.addEventListener('error', (event) => {
-// 		console.error(event.error);
-// 	});
-// 	//循环
-// 	recognition.addEventListener('end', () => {
-// 		console.log('Speech recognition ended');
-// 		if(startButton.disabled){
-// 			recognition.start();
-// 			console.log('Speech recognition started');
-// 		}
-// 	});
-// }
-
 startButton.addEventListener('click', () => {
 	console.log('Speech recognition started')
 	mediaRecorder.start();
@@ -677,14 +596,25 @@ function vr_function() {
 	recognition.onresult = function(event) {
 		var results = event.results;
 		console.log(results)
+		const now = Date.now();
 		for (var i = event.resultIndex; i < results.length; i++) {
 			if (results[i].isFinal)
 			{
 				let transcript = results[i][0].transcript
 				console.log(transcript)
+
 				transcription.textContent = transcript + transcription.textContent;
 				// document.getElementById('result_text').innerHTML = results[i][0].transcript;
 				vr_function();
+
+				            // 记录到本地存储
+							userSpeechData.messages.push({
+								timestamp: now,
+								text: transcript
+							});
+				            // 触发实时统计更新
+							updateLocalStats();
+							
 				socket.emit(`seed_my_speech_to_server_${joinrommid}`, [my_peerid,my_name,transcript]);
 				aframeMutlByte(transcript)
 			}
