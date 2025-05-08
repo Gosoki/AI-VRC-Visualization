@@ -542,95 +542,198 @@ const transcription = document.getElementById('transcription');
 const startButton = document.getElementById('startButton');
 const stopButton = document.getElementById('stopButton');
 var recognition = null;
+// 添加语音识别状态追踪
+var recognitionState = {
+    isRunning: false,
+    restartAttempts: 0,
+    maxRestartAttempts: 3,
+    cooldownTimer: null
+};
+
+// 添加日志记录函数
+function logSpeechEvent(event, details) {
+    console.log(`[语音识别-${event}]`, details || '');
+    document.getElementById('transcriptionStatus').innerHTML = `${event}: ${details || ''}`;
+}
 
 startButton.addEventListener('click', () => {
-	console.log('Speech recognition started')
-	mediaRecorder.start();
-	startButton.disabled = true;
-	stopButton.disabled = false;
-	vr_function()
+    logSpeechEvent('开始', '语音识别已启动');
+    mediaRecorder.start();
+    startButton.disabled = true;
+    stopButton.disabled = false;
+    
+    // 重置状态
+    recognitionState.isRunning = false;
+    recognitionState.restartAttempts = 0;
+    
+    // 启动语音识别
+    startSpeechRecognition();
 });
 
 // 停止录音
 stopButton.addEventListener('click', () => {
-	recognition.stop();
-	mediaRecorder.stop();
-	startButton.disabled = false;
-	stopButton.disabled = true;
+    if (recognition) {
+        recognition.stop();
+    }
+    mediaRecorder.stop();
+    startButton.disabled = false;
+    stopButton.disabled = true;
+    
+    // 更新状态
+    recognitionState.isRunning = false;
+    logSpeechEvent('停止', '语音识别已关闭');
+    
+    // 清除任何待定的重启定时器
+    if (recognitionState.cooldownTimer) {
+        clearTimeout(recognitionState.cooldownTimer);
+        recognitionState.cooldownTimer = null;
+    }
 });
 
-var flag_speech = 0;
-
-function vr_function() {
-	// window.SpeechRecognition = window.SpeechRecognition || webkitSpeechRecognition;
-	recognition = new webkitSpeechRecognition();	
-	let lang = 'ja-JP';
-	const checkbox = document.getElementById('languageCheckbox');
-	if (checkbox.checked) {
-		lang = 'zh-CN'; // 选中时设置为中文
-	} else {
-		lang = 'ja-JP'; // 未选中时设置为日文
-	}
-
-	recognition.lang = lang;
-
-	recognition.interimResults = true;
-	recognition.continuous = true;
-
-	recognition.onsoundstart = function() {
-		document.getElementById('transcriptionStatus').innerHTML = "認識中";
-	};
-	recognition.onnomatch = function() {
-		document.getElementById('transcriptionStatus').innerHTML = "もう一度試してください";
-	};
-	recognition.onerror = function() {
-		document.getElementById('transcriptionStatus').innerHTML = "エラー";
-		if(flag_speech == 0)
-			vr_function();
-	};
-	recognition.onsoundend = function() {
-		document.getElementById('transcriptionStatus').innerHTML = "停止中";
-			vr_function();
-	};
-
-	recognition.onresult = function(event) {
-		var results = event.results;
-		console.log(results)
-		const now = Date.now();
-		for (var i = event.resultIndex; i < results.length; i++) {
-			if (results[i].isFinal)
-			{
-				let transcript = results[i][0].transcript
-				console.log(transcript)
-
-				transcription.textContent = transcript + transcription.textContent;
-				// document.getElementById('result_text').innerHTML = results[i][0].transcript;
-				vr_function();
-
-				            // 记录到本地存储
-							userSpeechData.messages.push({
-								timestamp: now,
-								text: transcript
-							});
-				            // 触发实时统计更新
-							updateLocalStats();
-							
-				socket.emit(`seed_my_speech_to_server_${joinrommid}`, [my_peerid,my_name,transcript]);
-				aframeMutlByte(transcript)
-			}
-			else
-			{
-				// transcription.textContent = "[途中経過] " + results[i][0].transcript + transcription.textContent;
-				// document.getElementById('result_text').innerHTML = "[途中経過] " + results[i][0].transcript;
-				flag_speech = 1;
-			}
-		}
-	}
-	flag_speech = 0;
-	document.getElementById('transcriptionStatus').innerHTML = "Speech to text:";
-	recognition.start();
+function startSpeechRecognition() {
+    // 防止重复启动
+    if (recognitionState.isRunning) {
+        logSpeechEvent('警告', '语音识别已在运行中');
+        return;
+    }
+    
+    // 如果存在之前的实例，先停止
+    if (recognition) {
+        try {
+            recognition.stop();
+        } catch (e) {
+            console.error('停止旧识别实例时出错:', e);
+        }
+    }
+    
+    // 创建新实例
+    try {
+        recognition = new webkitSpeechRecognition();
+        let lang = document.getElementById('languageCheckbox').checked ? 'zh-CN' : 'ja-JP';
+        recognition.lang = lang;
+        recognition.interimResults = true;
+        recognition.continuous = true;
+        
+        // 设置事件处理器
+        setupRecognitionEventHandlers();
+        
+        // 启动
+        recognition.start();
+        recognitionState.isRunning = true;
+        logSpeechEvent('准备', `语言: ${lang}`);
+    } catch (e) {
+        logSpeechEvent('错误', '创建语音识别实例失败');
+        console.error('创建语音识别实例失败:', e);
+        scheduleRestart(3000); // 3秒后尝试重启
+    }
 }
 
+function setupRecognitionEventHandlers() {
+    recognition.onsoundstart = function() {
+        logSpeechEvent('声音开始', '检测到声音输入');
+    };
+    
+    recognition.onnomatch = function() {
+        logSpeechEvent('无匹配', '未能识别语音，请重试');
+        scheduleRestart(1000);
+    };
+    
+    recognition.onerror = function(event) {
+        logSpeechEvent('错误', event.error);
+        recognitionState.isRunning = false;
+        
+        // 根据错误类型决定是否重启
+        if (event.error === 'no-speech') {
+            logSpeechEvent('无语音', '未检测到语音');
+            scheduleRestart(1000);
+        } else if (event.error === 'aborted' || event.error === 'network') {
+            logSpeechEvent('中断', '连接问题');
+            scheduleRestart(2000);
+        } else {
+            console.error('语音识别错误:', event);
+            scheduleRestart(3000);
+        }
+    };
+    
+    recognition.onsoundend = function() {
+        logSpeechEvent('声音结束', '声音输入已停止');
+        // 短暂延迟后重启，以防漏掉一些语音
+        scheduleRestart(500);
+    };
+    
+    recognition.onend = function() {
+        logSpeechEvent('识别结束', '服务已停止');
+        recognitionState.isRunning = false;
+        
+        // 仅在未手动停止的情况下重启
+        if (!stopButton.disabled) {
+            scheduleRestart(1000);
+        }
+    };
+    
+    recognition.onresult = function(event) {
+        var results = event.results;
+        const now = Date.now();
+        
+        for (var i = event.resultIndex; i < results.length; i++) {
+            if (results[i].isFinal) {
+                let transcript = results[i][0].transcript;
+                console.log('最终识别结果:', transcript);
+                
+                // 处理识别到的文本
+                processRecognizedText(transcript, now);
+                
+                // 不在这里重启，让onend事件来处理重启
+            } else {
+                // 处理中间结果
+                logSpeechEvent('识别中', results[i][0].transcript);
+            }
+        }
+    };
+}
+
+function processRecognizedText(transcript, timestamp) {
+    // 更新UI
+    if (transcript.trim().length > 0) {
+        transcription.textContent = transcript + ' ' + transcription.textContent;
+        
+        // 记录到本地存储
+        userSpeechData.messages.push({
+            timestamp: timestamp,
+            text: transcript
+        });
+        
+        // 触发实时统计更新
+        updateLocalStats();
+        
+        // 发送到服务器
+        socket.emit(`seed_my_speech_to_server_${joinrommid}`, [my_peerid, my_name, transcript]);
+        
+        // 显示在3D场景中
+        aframeMutlByte(transcript);
+    }
+}
+
+function scheduleRestart(delay) {
+    // // 防止过多重启尝试
+    // if (recognitionState.restartAttempts >= recognitionState.maxRestartAttempts) {
+    //     logSpeechEvent('放弃', `达到最大重试次数(${recognitionState.maxRestartAttempts})`);
+    //     return;
+    // }
+    
+    // 清除之前的定时器
+    if (recognitionState.cooldownTimer) {
+        clearTimeout(recognitionState.cooldownTimer);
+    }
+    
+    // 设置新的定时器
+    recognitionState.cooldownTimer = setTimeout(() => {
+        recognitionState.restartAttempts++;
+        logSpeechEvent('重启', `尝试 ${recognitionState.restartAttempts}/${recognitionState.maxRestartAttempts}`);
+        startSpeechRecognition();
+        recognitionState.cooldownTimer = null;
+    }, delay);
+}
 
 ////空间传送funcs
 document.addEventListener("DOMContentLoaded", function () {

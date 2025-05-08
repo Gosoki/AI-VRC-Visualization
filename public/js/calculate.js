@@ -9,6 +9,7 @@ const userSpeechData = {
     messages: [], // 结构：{timestamp: number, text: string}
     stats: {
         shortTerm: 0,    // 最近1分钟消息数
+        charShortTerm: 0, // 1分钟内字符总数
         midTermAvg: 0,   // 5分钟平均/分钟
         longTerm: {      // 长期统计
             total: 0,
@@ -27,6 +28,10 @@ function calculateLocalStats() {
     const shortTerm = allMessages.filter(m => 
         now - m.timestamp < 60000
     ).length;
+    // 新增：统计1分钟内字符总数
+    const charShortTerm = allMessages.filter(m => 
+        now - m.timestamp < 60000
+    ).reduce((sum, m) => sum + (m.text ? m.text.length : 0), 0);
 
     // 中期统计（精确5分钟窗口）
     let midTermAvg = 0;
@@ -63,6 +68,7 @@ function calculateLocalStats() {
 
     return {
         shortTerm,
+        charShortTerm,
         midTermAvg: Number(midTermAvg.toFixed(1)),
         longTerm: {
             total,
@@ -104,6 +110,9 @@ function updateUI() {
     
     document.getElementById('long-term').textContent = 
         userSpeechData.stats.longTerm.avgPerMin;
+    // 新增：显示字符数统计
+    document.getElementById('char-count').textContent = 
+        userSpeechData.stats.charShortTerm;
 }
 
 // ================ 辅助函数 ================

@@ -14,6 +14,8 @@
 
 //导入模块
 const { sendToGPT, gpt2img, gpt2img_sd } = require('./utils/aifunc.js'); // 导入自定义的AI函数模块
+const { calculateAverageInterval, getSpeakingScore, getLastMessages, 
+        getRoomMessagesInWindow, calculateRoomLongTerm, calculate5MinuteAverage } = require('./utils/stats.js');
 
 // ExpressとSocketIOをインポート
 const express = require('express');
@@ -21,6 +23,8 @@ const expressapp = express();
 const fs = require('fs');
 const path = require('path');
 const https = require('https');
+const rateLimit = require('express-rate-limit');
+const winston = require('winston');
 
 const { SocksProxyAgent } = require('socks-proxy-agent');
 const proxyAgent = new SocksProxyAgent('socks5://127.0.0.1:10808');
@@ -88,12 +92,93 @@ const roomTimers = {}; // 存储各房间的定时器
 const STATS_INTERVAL = 1000; // 1秒更新一次
 
 const userInfoMap = new Map();
-const userPeerInfo = {};
+const userPeerInfo = new Map();
 const mainspace = "mainspace";
 
+const MAX_MESSAGES_PER_ROOM = 1000; // 每个房间最大消息数
+const CLEANUP_INTERVAL = 30 * 60 * 1000; // 30分钟清理一次
+
+// 配置日志系统
+const logger = winston.createLogger({
+	level: 'info',
+	format: winston.format.combine(
+		winston.format.timestamp(),
+		winston.format.json()
+	),
+	transports: [
+		new winston.transports.File({ filename: 'logs/error.log', level: 'error' }),
+		new winston.transports.File({ filename: 'logs/combined.log' })
+	]
+});
+
+if (process.env.NODE_ENV !== 'production') {
+	logger.add(new winston.transports.Console({
+		format: winston.format.simple()
+	}));
+}
+
+// 配置速率限制
+const limiter = rateLimit({
+	windowMs: 15 * 60 * 1000, // 15分钟
+	max: 100 // 限制每个IP 15分钟内最多100个请求
+});
+
+expressapp.use(limiter);
+
+// 输入验证中间件
+const validateInput = (req, res, next) => {
+	const sanitizeString = (str) => {
+		return str.replace(/[<>]/g, ''); // 移除潜在的HTML标签
+	};
+
+	if (req.body) {
+		Object.keys(req.body).forEach(key => {
+			if (typeof req.body[key] === 'string') {
+				req.body[key] = sanitizeString(req.body[key]);
+			}
+		});
+	}
+	next();
+};
+
+expressapp.use(validateInput);
+
+// 错误处理中间件
+const errorHandler = (err, req, res, next) => {
+	logger.error('Error:', err);
+	res.status(500).json({ error: '服务器内部错误' });
+};
+
+expressapp.use(errorHandler);
+
+// 添加全局错误处理
+process.on('uncaughtException', (err) => {
+	console.error('未捕获的异常:', err);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+	console.error('未处理的 Promise 拒绝:', reason);
+});
+
+// 定期清理机制
+setInterval(() => {
+	const now = Date.now();
+	for (const roomId in speechText) {
+		// 清理超过24小时的消息
+		speechText[roomId] = speechText[roomId].filter(msg => 
+			now - msg.timestamp < 24 * 60 * 60 * 1000
+		);
+		
+		// 如果消息数量超过限制，只保留最新的消息
+		if (speechText[roomId].length > MAX_MESSAGES_PER_ROOM) {
+			speechText[roomId] = speechText[roomId].slice(-MAX_MESSAGES_PER_ROOM);
+		}
+	}
+}, CLEANUP_INTERVAL);
 
 //////Socket.IO FUNCTIONS Start//////
 io.on('connection', (socket) => {
+	logger.info(`New connection: ${socket.id}`);
 
 	socket.join(mainspace)
 	console.log("connection : ", socket.id);
@@ -113,13 +198,13 @@ io.on('connection', (socket) => {
 	socket.on('join-room', (roomId, userId, userName) => {
 		console.log("roomId, userId, userName=", roomId, userId, userName);
 		userInfoMap.set(socket.id, [roomId, userId, userName]);// 将用户和关联的 roomId 存储在映射中
-		userPeerInfo[userId] = userName;
+		userPeerInfo.set(userId, userName);
 		socket.join(roomId)
 		console.log(socket.rooms)
 		console.log(userInfoMap)
 
 		socket.to(roomId).emit('user-connected', userId, userName)
-		io.emit('broadcast_usermap', Object.values(userPeerInfo))
+		io.emit('broadcast_usermap', Array.from(userPeerInfo.values()))
 
 		socket.on('leave-room', () => {
 			socket.leave(roomId);
@@ -130,25 +215,22 @@ io.on('connection', (socket) => {
 			console.log(userInfoMap)
 
 			//从字典中删除用户
-			if (userId in userPeerInfo) {
-				delete userPeerInfo[userId];
-			}
+			userPeerInfo.delete(userId);
 
 			console.log(socket.rooms)
-			io.emit('broadcast_usermap', Object.values(userPeerInfo))
+			io.emit('broadcast_usermap', Array.from(userPeerInfo.values()))
 		})
 
 		socket.on('disconnect', () => {
+			logger.info(`Client disconnected: ${socket.id}`);
 			socket.to(mainspace).emit('user-disconnected', [socket.id, userId, userName])
 			userInfoMap.delete(socket.id);// 从映射中删除用户
 			console.log("logout:", userName, socket.id, userId)
 			console.log(userInfoMap)
 
 			//从字典中删除用户
-			if (userId in userPeerInfo) {
-				delete userPeerInfo[userId];
-			}
-			io.emit('broadcast_usermap', Object.values(userPeerInfo))
+			userPeerInfo.delete(userId);
+			io.emit('broadcast_usermap', Array.from(userPeerInfo.values()))
 		})
 
 
@@ -350,131 +432,41 @@ io.on('connection', (socket) => {
 
 //////Write Json ASYNC FUNCTIONS Start//////
 async function updateFileData(filename, msg, roomid) {
-	try {
-		const fileData = await fs.promises.readFile(filename, 'utf8');
-		// 将JSON内容解析为JavaScript对象
-		const jsonData = JSON.parse(fileData);
-		// 进行数据操作，例如添加新数据
+	const maxRetries = 3;
+	let retries = 0;
 
-		if (!jsonData[roomid]) jsonData[roomid] = [];
-		jsonData[roomid].push({
-			userid: msg[0],
-			username: msg[1],
-			msg: msg[2],
-			timestamp: Date.now(),
-		});
-
-		const updatedData = JSON.stringify(jsonData, null, 2);
-		await fs.promises.writeFile(filename, updatedData, 'utf8');
-		console.log('Data updated and saved @' + filename + ' successfully.');
-	} catch (err) {
-		console.error('Error reading or writing file:', err);
+	while (retries < maxRetries) {
+		try {
+			const fileData = await fs.promises.readFile(filename, 'utf8');
+			const jsonData = JSON.parse(fileData);
+			
+			if (!jsonData[roomid]) jsonData[roomid] = [];
+			jsonData[roomid].push({
+				userid: msg[0],
+				username: msg[1],
+				msg: msg[2],
+				timestamp: Date.now(),
+			});
+			
+			if (jsonData[roomid].length > MAX_MESSAGES_PER_ROOM) {
+				jsonData[roomid] = jsonData[roomid].slice(-MAX_MESSAGES_PER_ROOM);
+			}
+			
+			const updatedData = JSON.stringify(jsonData, null, 2);
+			await fs.promises.writeFile(filename, updatedData, 'utf8');
+			logger.info(`Data updated and saved @${filename} successfully.`);
+			return;
+		} catch (err) {
+			retries++;
+			logger.error(`Error updating file (attempt ${retries}/${maxRetries}):`, err);
+			if (retries === maxRetries) {
+				throw err;
+			}
+			await new Promise(resolve => setTimeout(resolve, 1000 * retries)); // 指数退避
+		}
 	}
 }
 //////Write Json ASYNC FUNCTIONS End//////
-
-
-
-// 计算发言间隔的函数
-function calculateAverageInterval(messages) {
-	if (messages.length < 2) return 0;
-
-
-	// 提取时间戳（单位：秒）
-	const timestamps = messages.map(msg => parseInt(msg.split(':')[0]) / 1000);
-
-	// 计算相邻消息之间的时间间隔
-	let intervals = [];
-	for (let i = 1; i < timestamps.length; i++) {
-		intervals.push(timestamps[i] - timestamps[i - 1]);
-	}
-
-	// 计算平均间隔
-	const averageInterval = intervals.reduce((sum, interval) => sum + interval, 0) / intervals.length;
-	return averageInterval;
-}
-
-
-// 计算发言分值函数
-function getSpeakingScore(averageInterval) {
-	if (averageInterval <= 3) return 0.95;       // 2 秒以内间隔，分值为 1
-	if (averageInterval >= 15) return 0.3;    // 15 秒或更长间隔，分值为 0.1
-	return 1 - (averageInterval - 2) * 0.05;  // 根据间隔，分值线性递减
-}
-
-
-function getLastMessages(speechText, maxCount = 30, key = ["username", "msg"]) {
-	const messages = speechText || [];
-	const startIndex = Math.max(0, messages.length - maxCount);
-	return messages.slice(startIndex).map(item =>
-		`${item[key[0]]}: ${item[key[1]]}`
-	);
-}
-
-
-
-/**
- * 获取指定时间窗口内的消息
- * @param {Array} messages 消息数组（按时间升序）
- * @param {number} timeWindow 毫秒数
- * @returns {Array} 时间窗口内的消息
- */
-function getRoomMessagesInWindow(messages, timeWindow) {
-	const now = Date.now();
-	const cutoff = now - timeWindow;
-
-	// 逆向查找优化性能
-	for (let i = messages.length - 1; i >= 0; i--) {
-		if (messages[i].timestamp < cutoff) {
-			return messages.slice(i + 1);
-
-		}
-	}
-	return messages.slice(); // 如果没有消息在窗口内，返回所有消息
-
-}
-
-
-/**
- * 计算房间长期发言频率
- * @param {Array} messages 全部消息
- * @returns {Object} {frequency: 条/分钟, interval: 平均间隔秒数}
- */
-function calculateRoomLongTerm(messages) {
-	if (messages.length < 2) return { frequency: messages.length, interval: 0 };
-
-	const firstTimestamp = messages[0].timestamp;
-	const lastTimestamp = messages[messages.length - 1].timestamp;
-	const totalMin = (lastTimestamp - firstTimestamp) / 60000;
-
-	return {
-		frequency: totalMin > 0 ? messages.length / totalMin : messages.length,
-		interval: (Date.now() - firstTimestamp) / messages.length / 1000
-	};
-}
-
-
-function calculate5MinuteAverage(messages) {
-	const fiveMinWindow = 5 * 60 * 1000; // 5分钟窗口
-	const fiveMinMessages = getRoomMessagesInWindow(messages, fiveMinWindow);
-
-	if (fiveMinMessages.length === 0) return 0;
-
-	// 计算实际时间跨度（最大5分钟）
-	const actualWindow = Math.min(
-		Date.now() - fiveMinMessages[0].timestamp,
-		fiveMinWindow
-	);
-
-	// 转换为分钟数（至少1分钟）
-	const minutes = Math.max(actualWindow / 60000, 1);
-
-	// 每分钟平均值
-	return (fiveMinMessages.length / minutes).toFixed(1);
-}
-
-
-
 
 function startRoomStatsTimer(roomId) {
 	// 创建新定时器
@@ -484,12 +476,29 @@ function startRoomStatsTimer(roomId) {
 		const roomMessages = speechText[roomId] || [];
 
 		// 短期统计（1分钟）
-		const shortTerm = getRoomMessagesInWindow(roomMessages, 60000).length;
+		// 获取最近1分钟内的消息
+		const shortTermMessages = getRoomMessagesInWindow(roomMessages, 60000);
+		// 计算1分钟内的消息数量
+		const shortTerm = shortTermMessages.length;
+		// 计算1分钟内的总字符数
+		const shortCharCount = shortTermMessages.reduce((sum, m) => sum + (m.msg ? m.msg.length : 0), 0);
 
 		// 中期统计（5分钟平均）
+		// 获取最近5分钟内的消息
+		const midTermMessages = getRoomMessagesInWindow(roomMessages, 5 * 60 * 1000);
+		// 计算实际的时间窗口（不超过5分钟）
+		const actualMidWindow = Math.min(now - (midTermMessages[0]?.timestamp || now), 5 * 60 * 1000);
+		// 将时间窗口转换为分钟数（至少1分钟）
+		const midTermMinutes = Math.max(actualMidWindow / 60000, 1);
+		// 计算5分钟内的平均消息数
 		const midTermAvg = calculate5MinuteAverage(roomMessages);
+		// 计算5分钟内的总字符数
+		const midCharCount = midTermMessages.reduce((sum, m) => sum + (m.msg ? m.msg.length : 0), 0);
+		// 计算5分钟内的平均字符数（保留一位小数）
+		const midCharAvg = (midCharCount / midTermMinutes).toFixed(1);
 
 		// 长期统计
+		// 
 		const longTermStats = calculateRoomLongTerm(roomMessages);
 
 		// 构造统计数据
@@ -498,11 +507,13 @@ function startRoomStatsTimer(roomId) {
 			timestamp: now,
 			shortTerm: {
 				messages: shortTerm,
-				perMinute: shortTerm // 1分钟实际数量
+				perMinute: shortTerm,
+				charPerMinute: shortCharCount
 			},
 			midTerm: {
 				windowMinutes: 5,
-				averagePerMin: midTermAvg
+				averagePerMin: midTermAvg,
+				charAveragePerMin: midCharAvg
 			},
 			longTerm: {
 				total: roomMessages.length,
@@ -514,18 +525,16 @@ function startRoomStatsTimer(roomId) {
 		// 广播给所有客户端
 		io.to(roomId).emit('broadcast_room_stats', stats);
 
-		// // 控制台日志
-		// console.log(`[${roomId} Stats] 最近${stats.shortTerm.windowSec}秒: ${stats.shortTerm.messages}条 | 总计: ${stats.longTerm.totalMessages}条`,Date.now());
-		// console.log(`[${roomId} Stats] 平均频率: ${stats.longTerm.avgPerMin}条/分钟 | 平均间隔: ${stats.longTerm.avgIntervalSec}秒`,Date.now());
-
 		// 优化后的日志输出
 		console.log(JSON.stringify({
 			room: roomId,
 			time: new Date(now).toISOString(),
 			short: `${shortTerm}/min`,
+			shortChars: `${shortCharCount}/chars`,
 			mid: `${midTermAvg}/min(5min avg)`,
+			midChars: `${midCharAvg}/chars(5min avg)`,
 			long: `${stats.longTerm.avgPerMin}/min(total)`,
-			interval: `${stats.longTerm.avgInterval}/sec`,
+			interval: `${stats.longTerm.avgInterval}sec`,
 			total: roomMessages.length,
 		}, null, 2));
 
@@ -543,13 +552,6 @@ function startRoomStatsTimer(roomId) {
 
 	console.log(`[${roomId}] 启动统计定时器`);
 }
-
-
-
-
-
-
-
 
 
 
